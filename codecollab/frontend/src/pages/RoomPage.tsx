@@ -1,0 +1,312 @@
+import { useParams } from 'react-router-dom';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import { useEffect, useRef, useState } from 'react';
+import { MonacoBinding } from 'y-monaco';
+import Editor from '@monaco-editor/react';
+import type { editor as MonacoEditorTypes } from 'monaco-editor';
+import apiClient from '../apiClient'; // --- (Phase 5) Import apiClient ---
+
+// --- (Phase 4) User Presence Code... ---
+const USER_NAMES = [
+  'Badger', 'Hippo', 'Lion', 'Tiger', 'Puma', 'Wolf', 'Rabbit', 'Bear', 'Koala', 'Ape'
+];
+const randomName = () => USER_NAMES[Math.floor(Math.random() * USER_NAMES.length)];
+const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+
+interface UserAwarenessState {
+  user: {
+    name: string;
+    color: string;
+  }
+}
+
+const ActiveUsers = ({ users }: { users: Map<number, UserAwarenessState> }) => {
+  const userArray = Array.from(users.entries());
+  return (
+    <div className="flex -space-x-2 overflow-hidden pr-2" title="Active Users">
+      {userArray.map(([clientId, state]) => {
+        if (!state || !state.user) return null;
+        return (
+          <div 
+            key={clientId} 
+            className="ring-2 ring-gray-900"
+            style={{ 
+              backgroundColor: state.user.color,
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: '0.8rem',
+              width: '32px',
+              height: '32px',
+              minWidth: '32px',
+              minHeight: '32px',
+              borderRadius: '50%',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: '1',
+              textAlign: 'center'
+            }}
+            title={state.user.name}
+          >
+            {state.user.name.substring(0, 1).toUpperCase()} 
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+// --- (End Phase 4) ---
+
+// LanguageSelector component (no changes)
+const LanguageSelector = ({ onSelect }: { onSelect: (lang: string) => void }) => {
+  const LANGUAGES = ['javascript', 'typescript', 'python', 'java', 'go', 'html', 'css'];
+  return (
+    <select 
+      onChange={(e) => onSelect(e.target.value)}
+      defaultValue="javascript"
+      className="bg-gray-700 text-white rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      {LANGUAGES.map((lang) => (
+        <option key={lang} value={lang}>
+          {lang}
+        </option>
+      ))}
+    </select>
+  );
+};
+
+// --- (Phase 5) Output Panel Component ---
+// Type for the execution result
+interface ExecutionOutput {
+  stdout: string | null;
+  stderr: string | null;
+  compile_output: string | null;
+  message: string | null;
+  status: {
+    id: number;
+    description: string;
+  };
+}
+
+const OutputPanel = ({ output, isLoading }: { output: ExecutionOutput | null, isLoading: boolean }) => {
+  const getFormattedOutput = () => {
+    if (isLoading) {
+      return "Executing code...";
+    }
+    if (!output) {
+      return "Click 'Run Code' to see the output here.";
+    }
+
+    const { stdout, stderr, compile_output, status } = output;
+
+    if (status.id <= 2) { // In Queue, Processing
+      return "Processing...";
+    }
+
+    if (status.id === 3) { // Accepted (Success)
+      return stdout || "Execution successful, but no standard output.";
+    }
+    
+    // Any other status is an error
+    return `Error (${status.description}):\n${stderr || compile_output || 'Unknown error'}`;
+  };
+  
+  const outputText = getFormattedOutput();
+  const isError = !isLoading && output && output.status.id > 3;
+
+  return (
+    <div className="flex flex-col h-48"> {/* Fixed height of 12rem (192px) instead of h-1/4 */}
+      <h3 className="text-lg font-semibold bg-gray-700 px-4 py-2 rounded-t-md flex-shrink-0">Output</h3>
+      <textarea
+        readOnly
+        className={`w-full flex-grow bg-gray-900 rounded-b-md p-4 font-mono text-sm overflow-auto ${
+          isError ? 'text-red-400' : 'text-gray-200'
+        }`}
+        value={outputText}
+      />
+    </div>
+  );
+};
+// --- (End Phase 5) ---
+
+
+export default function RoomPage() {
+  const { roomId } = useParams<{ roomId: string }>();
+  const [language, setLanguage] = useState('javascript');
+  
+  const [editor, setEditor] = useState<MonacoEditorTypes.IStandaloneCodeEditor | null>(null);
+  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
+  const [yText, setYText] = useState<Y.Text | null>(null);
+  const [activeUsers, setActiveUsers] = useState<Map<number, UserAwarenessState>>(new Map());
+
+  // --- (Phase 5) State for execution ---
+  const [execOutput, setExecOutput] = useState<ExecutionOutput | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  // --- (End Phase 5) ---
+
+  const bindingRef = useRef<MonacoBinding | null>(null);
+
+  // --- HOOK 1: Set up Yjs ---
+  useEffect(() => {
+    if (!roomId) return;
+    const ydoc = new Y.Doc();
+    const yTextInstance = ydoc.getText('monaco');
+    setYText(yTextInstance);
+    const wsUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
+                    .replace(/^http/, 'ws');
+    const wsProvider = new WebsocketProvider(
+      wsUrl + '/yjs-ws',
+      roomId,
+      ydoc
+    );
+    setProvider(wsProvider);
+    wsProvider.on('status', (event: { status: string }) => {
+      console.log(`[Yjs] ${event.status}`);
+    });
+
+    const localUser = {
+      name: randomName(),
+      color: randomColor()
+    };
+    wsProvider.awareness.setLocalStateField('user', localUser);
+
+    const awarenessChangeHandler = () => {
+      const states = wsProvider.awareness.getStates() as Map<number, UserAwarenessState>;
+      setActiveUsers(new Map(states));
+      states.forEach((state, clientId) => {
+        if (state.user && state.user.color) {
+          const styleId = `yjs-client-${clientId}`;
+          let styleElement = document.getElementById(styleId) as HTMLStyleElement;
+          if (!styleElement) {
+            styleElement = document.createElement('style');
+            styleElement.id = styleId;
+            document.head.appendChild(styleElement);
+          }
+          styleElement.textContent = `
+            .yRemoteSelection-${clientId} { background-color: ${state.user.color}; opacity: 0.3; }
+            .yRemoteSelectionHead-${clientId} { position: absolute; border-left: 2px solid ${state.user.color}; border-top: 2px solid ${state.user.color}; border-top-left-radius: 4px; height: 1.2em; box-sizing: border-box; }
+            .yRemoteSelectionHead-${clientId}::after { content: '${state.user.name}'; position: absolute; top: -1.4em; left: -1px; background-color: ${state.user.color}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; line-height: 1.2; font-weight: 600; white-space: nowrap; pointer-events: none; user-select: none; }
+          `;
+        }
+      });
+    };
+    wsProvider.awareness.on('change', awarenessChangeHandler);
+    awarenessChangeHandler();
+
+    return () => {
+      wsProvider.awareness.off('change', awarenessChangeHandler);
+      const styleElements = document.querySelectorAll('[id^="yjs-client-"]');
+      styleElements.forEach(el => el.remove());
+      wsProvider.disconnect();
+      ydoc.destroy();
+    };
+  }, [roomId]);
+
+  // --- HOOK 2: Create the Monaco Binding ---
+  useEffect(() => {
+    if (editor && yText && provider) {
+      if (bindingRef.current) {
+        bindingRef.current.destroy();
+      }
+      const binding = new MonacoBinding(
+        yText,
+        editor.getModel()!,
+        new Set([editor]),
+        provider.awareness
+      );
+      bindingRef.current = binding;
+      console.log('[Binding] Yjs + Monaco binding created.');
+      return () => {
+        binding.destroy();
+        bindingRef.current = null;
+      };
+    }
+  }, [editor, yText, provider]);
+
+  // --- Editor Mount Handler ---
+  const handleEditorDidMount = (
+    editor: MonacoEditorTypes.IStandaloneCodeEditor,
+  ) => {
+    setEditor(editor);
+  };
+
+  // --- (Phase 5) Run Code Handler ---
+  const handleRunCode = async () => {
+    if (!editor) return;
+
+    const code = editor.getValue();
+    setIsLoading(true);
+    setExecOutput(null);
+
+    try {
+      const response = await apiClient.post<ExecutionOutput>('/api/execute', {
+        language: language,
+        code: code,
+      });
+      setExecOutput(response.data);
+    } catch (error: any) {
+      console.error('Error running code:', error);
+      setExecOutput({
+        stdout: null,
+        stderr: error.response?.data?.error || "Error connecting to execution server.",
+        compile_output: null,
+        message: null,
+        status: { id: -1, description: "Client Error" }
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    // --- (Phase 5) Updated layout classes ---
+    <div className="bg-gray-800 text-white h-screen p-4 flex flex-col space-y-4">
+      <div className="flex justify-between items-center flex-shrink-0">
+        <h1 className="text-2xl font-mono">Room: {roomId}</h1>
+        <div className="flex items-center space-x-4">
+          <ActiveUsers users={activeUsers} />
+          <LanguageSelector onSelect={setLanguage} />
+          <span className={`text-sm font-semibold ${provider?.wsconnected ? 'text-green-400' : 'text-red-400'}`}>
+            {provider?.wsconnected ? '● CONNECTED' : '● DISCONNECTED'}
+          </span>
+          {/* --- (Phase 5) "Run" Button --- */}
+          <button
+            onClick={handleRunCode}
+            disabled={isLoading}
+            className="px-4 py-1.5 bg-green-600 hover:bg-green-700 rounded-md font-semibold transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Running...' : 'Run Code'}
+          </button>
+        </div>
+      </div>
+      
+      {/* --- (Phase 5) Editor now uses flex-1 --- */}
+      <div 
+        className="rounded-md overflow-hidden flex-1 min-h-0"
+        // style={{ height: 'calc(100vh - 80px)' }} // We can now remove this!
+      >
+        <Editor
+          height="400px"
+          width="100%"
+          theme="vs-dark"
+          language={language}
+          defaultValue="// Start coding..."
+          onMount={handleEditorDidMount}
+          options={{
+            fontSize: 14,
+            minimap: { enabled: true },
+            glyphMargin: true,
+            "semanticHighlighting.enabled": true,
+          }}
+        />
+      </div>
+      
+      {/* --- (Phase 5) Output Panel Added --- */}
+      <div className="flex-shrink-0">
+        <OutputPanel output={execOutput} isLoading={isLoading} />
+      </div>
+    </div>
+  );
+}
