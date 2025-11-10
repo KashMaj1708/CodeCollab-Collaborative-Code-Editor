@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
-// Only run dotenv in development
+// Run dotenv only if not in production
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
 }
@@ -10,7 +10,7 @@ let redisClient: Redis | null = null;
 
 /**
  * Initializes the Redis connection.
- * Throws an error if REDIS_URL is missing in production.
+ * Throws an error if REDIS_URL is missing.
  */
 export const initRedis = (): Redis => {
   if (redisClient) {
@@ -20,31 +20,25 @@ export const initRedis = (): Redis => {
   const redisUrl = process.env.REDIS_URL;
   console.log('[Redis] Initializing connection...');
 
-  // --- THIS IS THE FIX ---
-  // We check if the URL exists and call the constructor differently.
-  if (redisUrl) {
-    // URL exists, use it.
-    redisClient = new Redis(redisUrl, {
-      maxRetriesPerRequest: null, // Keep retrying
-    });
-  } else {
-    // URL does not exist.
-    if (process.env.NODE_ENV === 'production') {
-      console.error('FATAL: REDIS_URL is not set in the environment.');
-      throw new Error('REDIS_URL environment variable is not set.');
-    } else {
-      // In development, it's okay to have no URL.
-      // Call with *no* URL to default to localhost:6379
-      console.warn('REDIS_URL not set, defaulting to localhost:6379');
-      redisClient = new Redis({
-        maxRetriesPerRequest: null,
-      });
-    }
+  // --- THIS IS THE NEW FIX ---
+  // We no longer check for NODE_ENV.
+  // If the REDIS_URL is missing, we *always* throw an error.
+  if (!redisUrl) {
+    console.error('FATAL: REDIS_URL is not set in the environment.');
+    console.error('Please ensure the REDIS_URL environment variable is set on your Render service.');
+    throw new Error('REDIS_URL environment variable is not set.');
   }
   // --- END FIX ---
 
+
+  // If we are here, TypeScript knows redisUrl is a string.
+  redisClient = new Redis(redisUrl, {
+    maxRetriesPerRequest: null, // Keep retrying
+  });
+
   redisClient.on('error', (err) => {
-    // This is the error you were seeing
+    // This will log "ECONNREFUSED" if the URL is *wrong*,
+    // but our check above handles if it's *missing*.
     console.error('[ioredis] Unhandled error event:', err.message);
   });
 
@@ -57,11 +51,9 @@ export const initRedis = (): Redis => {
 
 /**
  * Gets the already-initialized Redis client.
- * Will initialize if it hasn't been already.
  */
 export const getRedisClient = (): Redis => {
   if (!redisClient) {
-    // This will either initialize or throw an error if URL is missing
     return initRedis();
   }
   return redisClient;
