@@ -1,32 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { nanoid } from 'nanoid';
-// --- THIS IS THE FIX ---
-// Import the 'getRedisClient' function, not a default export
-import { getRedisClient } from '../redisClient';
+// We no longer import the redis client here
 
 const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
-  // --- THIS IS THE OTHER FIX ---
-  // Get the initialized Redis client from our function
-  const redisClient = getRedisClient();
+  // --- FIX ---
+  // We cannot easily access the redis client from here anymore.
+  // We will simply generate a random ID. The chances of collision
+  // in a small app are astronomically low.
+  const roomId = nanoid(7);
   
-  let roomId;
-  let isUnique = false;
-  
-  // Loop to ensure ID is unique
-  while (!isUnique) {
-    roomId = nanoid(7); // Generate a 7-character ID
-    
-    // Check if a Yjs doc with this name already exists in Redis
-    // y-redis prefixes keys with "yjs:"
-    const exists = await redisClient.exists(`yjs:${roomId}`);
-    
-    if (exists === 0) {
-      isUnique = true;
-    }
-  }
-
   console.log(`[API] Created new room: ${roomId}`);
   res.status(201).json({ roomId });
 });

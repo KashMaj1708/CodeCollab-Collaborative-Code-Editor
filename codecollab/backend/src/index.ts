@@ -8,14 +8,16 @@ const { setupWSConnection } = require('y-websocket/bin/utils');
 
 // --- (Persistence) ---
 import { RedisPersistence } from 'y-redis';
-// Import our new functions, not the client instance
-import { initRedis } from './redisClient'; 
+import { RedisOptions } from 'ioredis'; // Import ioredis types
 // --- (End Persistence) ---
 
 import roomRoutes from './routes/roomRoutes';
 import executeRoutes from './routes/executeRoutes';
 
-//dotenv.config();
+// Load .env only in development
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -38,7 +40,7 @@ const wss = new WebSocketServer({ noServer: true });
 const YJS_WEBSOCKET_PATH = '/yjs-ws';
 
 // --- (Persistence) ---
-// Declare the persistence variable, but don't initialize it
+// Declare the persistence variable
 let redisPersistence: RedisPersistence;
 // --- (End Persistence) ---
 
@@ -59,9 +61,8 @@ wss.on('connection', (ws: any, req: any) => {
     roomName: roomName,
     
     // --- (Persistence) ---
-    // Pass the persistence provider
     persistence: {
-      provider: redisPersistence, // This will be initialized by the time we connect
+      provider: redisPersistence,
       bindState: true 
     }
     // --- (End Persistence) ---
@@ -83,28 +84,43 @@ server.on('upgrade', (request: any, socket: any, head: any) => {
 // --- NEW SERVER START FUNCTION ---
 const startServer = () => {
   try {
-    const redisClient = initRedis(); // Keep this for your own use
-    
-    // Parse Redis URL for RedisPersistence config
-    const redisUrl = new URL(process.env.REDIS_URL!);
-    
-    redisPersistence = new RedisPersistence({
-      redis: {
-        host: redisUrl.hostname,
-        port: parseInt(redisUrl.port || '6379'),
-        password: redisUrl.password,
-        username: redisUrl.username || 'default',
-        tls: redisUrl.protocol === 'rediss:' ? {} : undefined,
-      }
-    } as any);
+    // 1. Get the Redis URL
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) {
+      throw new Error('FATAL: REDIS_URL environment variable is not set.');
+    }
 
+    // 2. Parse the URL into options for ioredis
+    const url = new URL(redisUrl);
+    const redisOpts: RedisOptions = {
+      host: url.hostname,
+      port: parseInt(url.port || '6379'),
+      password: url.password,
+      username: url.username || 'default',
+      maxRetriesPerRequest: null,
+    };
+    
+    // 3. Add TLS if the protocol is 'rediss:'
+    if (url.protocol === 'rediss:') {
+      redisOpts.tls = {}; // Enable TLS
+    }
+    
+    console.log(`[Redis] y-redis is initializing connection to: ${redisOpts.host}`);
+
+    // 4. Create the persistence provider, passing the *options*
+    // This is what the library has wanted all along.
+    redisPersistence = new RedisPersistence({ 
+      redisOpts: redisOpts 
+    });
+
+    // 5. Start the server
     server.listen(port, () => {
       console.log(`🚀 Server (HTTP + WebSocket) listening at http://localhost:${port}`);
     });
 
   } catch (error: any) {
     console.error('Failed to start server:', error.message);
-    process.exit(1);
+    process.exit(1); // Exit if Redis URL is missing
   }
 };
 
