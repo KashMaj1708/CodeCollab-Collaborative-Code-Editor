@@ -15,7 +15,7 @@ import { initRedis } from './redisClient';
 import roomRoutes from './routes/roomRoutes';
 import executeRoutes from './routes/executeRoutes';
 
-dotenv.config();
+//dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
