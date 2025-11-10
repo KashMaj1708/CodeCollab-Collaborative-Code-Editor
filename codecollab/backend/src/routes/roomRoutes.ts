@@ -1,32 +1,34 @@
 import { Router, Request, Response } from 'express';
 import { nanoid } from 'nanoid';
-import redisClient from '../redisClient';
+// --- THIS IS THE FIX ---
+// Import the 'getRedisClient' function, not a default export
+import { getRedisClient } from '../redisClient';
 
 const router = Router();
 
-// POST /api/rooms - Create a new collaborative room
 router.post('/', async (req: Request, res: Response) => {
-  try {
-    // Generate a unique 8-character room ID
-    const roomId = nanoid(8); 
-
-    // As per the spec, we store a "presence" key to track rooms.
-    // We'll set an expiration of 24 hours (86400 seconds)
-    // The value 'created' is just a placeholder.
-    await redisClient.set(`room:${roomId}:presence`, 'created', 'EX', 86400);
-
-    // Later, we will also store the Yjs document here.
-    // For now, this is enough to "create" the room.
-
-    console.log(`[Server] Room created: ${roomId}`);
-
-    // Return the new room ID to the client
-    res.status(201).json({ roomId });
-
-  } catch (error) {
-    console.error('Error creating room:', error);
-    res.status(500).json({ message: 'Error creating room', error });
+  // --- THIS IS THE OTHER FIX ---
+  // Get the initialized Redis client from our function
+  const redisClient = getRedisClient();
+  
+  let roomId;
+  let isUnique = false;
+  
+  // Loop to ensure ID is unique
+  while (!isUnique) {
+    roomId = nanoid(7); // Generate a 7-character ID
+    
+    // Check if a Yjs doc with this name already exists in Redis
+    // y-redis prefixes keys with "yjs:"
+    const exists = await redisClient.exists(`yjs:${roomId}`);
+    
+    if (exists === 0) {
+      isUnique = true;
+    }
   }
+
+  console.log(`[API] Created new room: ${roomId}`);
+  res.status(201).json({ roomId });
 });
 
 export default router;
