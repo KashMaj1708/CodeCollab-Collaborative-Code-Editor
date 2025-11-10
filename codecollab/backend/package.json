@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "postinstall": "npm run build"
+    "start": "node dist/index.js"
   },
   "keywords": [
     "express",
@@ -29,15 +28,17 @@
     "ws": "^8.18.3",
     "y-protocols": "^1.0.6",
     "y-redis": "^1.0.3",
-    "y-websocket": "^1.5.0"
-  },
-  "devDependencies": {
+    "y-websocket": "^1.5.0",
+
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/node": "^24.10.0",
     "@types/ws": "^8.18.1",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    
   },
   "engines": {
     "node": ">=18.x"
