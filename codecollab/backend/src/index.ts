@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import http from 'http';
@@ -7,9 +7,9 @@ import { URL } from 'url';
 const { setupWSConnection } = require('y-websocket/bin/utils');
 
 // --- (Persistence) ---
-// FIX: Correct class name is RedisPersistence
-import { RedisPersistence } from 'y-redis'; 
-import redisClient from './redisClient'; // Import our existing ioredis client
+import { RedisPersistence } from 'y-redis';
+// Import our new functions, not the client instance
+import { initRedis } from './redisClient'; 
 // --- (End Persistence) ---
 
 import roomRoutes from './routes/roomRoutes';
@@ -25,7 +25,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   res.send('CodeCollab Backend is running!');
 });
 app.use('/api/rooms', roomRoutes);
@@ -38,12 +38,12 @@ const wss = new WebSocketServer({ noServer: true });
 const YJS_WEBSOCKET_PATH = '/yjs-ws';
 
 // --- (Persistence) ---
-// FIX: Correct class name is RedisPersistence
-const redisPersistence = new RedisPersistence(redisClient as any);
+// Declare the persistence variable, but don't initialize it
+let redisPersistence: RedisPersistence;
 // --- (End Persistence) ---
 
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws: any, req: any) => {
   const url = new URL(req.url || '', `http://${req.headers.host}`);
   const roomName = url.pathname.split('/').pop();
 
@@ -61,18 +61,18 @@ wss.on('connection', (ws, req) => {
     // --- (Persistence) ---
     // Pass the persistence provider
     persistence: {
-      provider: redisPersistence,
-      bindState: true // Bind Yjs doc to Redis
+      provider: redisPersistence, // This will be initialized by the time we connect
+      bindState: true 
     }
     // --- (End Persistence) ---
   });
 });
 
-server.on('upgrade', (request, socket, head) => {
+server.on('upgrade', (request: any, socket: any, head: any) => {
   const url = new URL(request.url || '', `http://${request.headers.host}`);
 
   if (url.pathname.startsWith(YJS_WEBSOCKET_PATH)) {
-    wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.handleUpgrade(request, socket, head, (ws: any) => {
       wss.emit('connection', ws, request);
     });
   } else {
@@ -80,6 +80,26 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-server.listen(port, () => {
-  console.log(`🚀 Server (HTTP + WebSocket) listening at http://localhost:${port}`);
-});
+// --- NEW SERVER START FUNCTION ---
+const startServer = () => {
+  try {
+    // 1. Initialize Redis *first*.
+    // This will connect or throw an error if REDIS_URL is missing.
+    const redisClient = initRedis();
+
+    // 2. Create the persistence provider *after* the client is ready.
+    redisPersistence = new RedisPersistence(redisClient as any);
+
+    // 3. Start the server.
+    server.listen(port, () => {
+      console.log(`🚀 Server (HTTP + WebSocket) listening at http://localhost:${port}`);
+    });
+
+  } catch (error: any) {
+    console.error('Failed to start server:', error.message);
+    process.exit(1); // Exit if Redis URL is missing
+  }
+};
+
+// Call the start function to run the app
+startServer();

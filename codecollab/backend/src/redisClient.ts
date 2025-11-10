@@ -1,28 +1,68 @@
-import { Redis } from 'ioredis';
+import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
-dotenv.config();
-
-const redisURL = process.env.REDIS_URL;
-
-if (!redisURL) {
-  console.error('Missing REDIS_URL environment variable.');
-  process.exit(1);
+// Only run dotenv in development
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
 }
 
-// We use lazyConnect: true so the connection is only established
-// when we first use it, not when the app starts.
-const redisClient = new Redis(redisURL, { 
-  lazyConnect: true,
-  maxRetriesPerRequest: null, // Allow it to keep retrying
-});
+let redisClient: Redis | null = null;
 
-redisClient.on('connect', () => {
-  console.log('🔗 Connected to Redis');
-});
+/**
+ * Initializes the Redis connection.
+ * Throws an error if REDIS_URL is missing in production.
+ */
+export const initRedis = (): Redis => {
+  if (redisClient) {
+    return redisClient;
+  }
 
-redisClient.on('error', (err) => {
-  console.error('Redis connection error:', err);
-});
+  const redisUrl = process.env.REDIS_URL;
+  console.log('[Redis] Initializing connection...');
 
-export default redisClient;
+  // --- THIS IS THE FIX ---
+  // We check if the URL exists and call the constructor differently.
+  if (redisUrl) {
+    // URL exists, use it.
+    redisClient = new Redis(redisUrl, {
+      maxRetriesPerRequest: null, // Keep retrying
+    });
+  } else {
+    // URL does not exist.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('FATAL: REDIS_URL is not set in the environment.');
+      throw new Error('REDIS_URL environment variable is not set.');
+    } else {
+      // In development, it's okay to have no URL.
+      // Call with *no* URL to default to localhost:6379
+      console.warn('REDIS_URL not set, defaulting to localhost:6379');
+      redisClient = new Redis({
+        maxRetriesPerRequest: null,
+      });
+    }
+  }
+  // --- END FIX ---
+
+  redisClient.on('error', (err) => {
+    // This is the error you were seeing
+    console.error('[ioredis] Unhandled error event:', err.message);
+  });
+
+  redisClient.on('connect', () => {
+    console.log('[ioredis] Successfully connected to Redis.');
+  });
+
+  return redisClient;
+};
+
+/**
+ * Gets the already-initialized Redis client.
+ * Will initialize if it hasn't been already.
+ */
+export const getRedisClient = (): Redis => {
+  if (!redisClient) {
+    // This will either initialize or throw an error if URL is missing
+    return initRedis();
+  }
+  return redisClient;
+};
