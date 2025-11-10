@@ -1,6 +1,8 @@
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
-
+console.log('[Debug] All env vars:', Object.keys(process.env));
+console.log('[Debug] Looking for REDIS_URL:', process.env.REDIS_URL);
+console.log('[Debug] Looking for redis_url:', process.env.redis_url);
 // Run dotenv only if not in production
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
