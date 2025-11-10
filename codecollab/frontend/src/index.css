@@ -1,8 +1,9 @@
+/* --- 1. TAILWIND DIRECTIVES (MUST BE FIRST) --- */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ... (rest of your index.css) */
+/* --- 2. ROOT STYLES (from Vite default) --- */
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -18,6 +19,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- 3. UI REVAMP ROOT STYLES (for new homepage) --- */
+/* This ensures the app can fill the whole screen */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevent scrolling on the body */
+}
+
+body {
+  margin: 0;
+  /* Use the new font for the whole app */
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+/* --- 4. DEFAULT VITE STYLES --- */
 a {
   font-weight: 500;
   color: #646cff;
@@ -26,16 +43,6 @@ a {
 a:hover {
   color: #535bf2;
 }
-
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* Prevent scrolling on the body */
-}
-/* ----------------------- */
-
-
 
 h1 {
   font-size: 3.2em;
@@ -73,12 +80,11 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
 /* ----------------------------------
---- y-monaco Cursor Styles ---
+--- 5. y-monaco Cursor Styles (from Phase 4) ---
 ----------------------------------
 */
-
-
 
 /* This is the Cursor "caret" */
 .y-cursor {
@@ -128,4 +134,33 @@ button:focus-visible {
   height: 32px !important;
   min-width: 32px !important;
   min-height: 32px !important;
+}
+
+
+/* --- 6. UI REVAMP: Blob Background Animations (for new homepage) --- */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite cubic-bezier(0.6, -0.28, 0.735, 0.045);
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
 }

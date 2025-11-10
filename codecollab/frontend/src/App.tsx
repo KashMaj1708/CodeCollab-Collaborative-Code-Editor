@@ -18,7 +18,7 @@ function App() {
         }}
       />
       
-      <div className="app">
+      <div className="app h-full">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/room/:roomId" element={<RoomPage />} />

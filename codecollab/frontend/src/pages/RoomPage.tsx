@@ -6,11 +6,8 @@ import { MonacoBinding } from 'y-monaco';
 import Editor from '@monaco-editor/react';
 import type { editor as MonacoEditorTypes } from 'monaco-editor';
 import apiClient from '../apiClient';
-
-// --- (Phase 6) Imports ---
 import { toast } from 'react-hot-toast';
-import { Share2 } from 'lucide-react'; // Icon library
-// --- (End Phase 6) ---
+import { Share2 } from 'lucide-react';
 
 // --- (Phase 4) User Presence Code... ---
 const USER_NAMES = [
@@ -18,6 +15,28 @@ const USER_NAMES = [
 ];
 const randomName = () => USER_NAMES[Math.floor(Math.random() * USER_NAMES.length)];
 const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+
+// --- (Name Fix) Helper to get a unique name ---
+const getAvailableName = (usedNames: Set<string>): string => {
+  // 1. Try to find an unused name from the list
+  const availableNames = USER_NAMES.filter(name => !usedNames.has(name));
+  if (availableNames.length > 0) {
+    return availableNames[Math.floor(Math.random() * availableNames.length)];
+  }
+  
+  // 2. If all names are used, append a number
+  let i = 2;
+  const baseName = USER_NAMES[Math.floor(Math.random() * USER_NAMES.length)];
+  while (true) {
+    const newName = `${baseName} ${i}`;
+    if (!usedNames.has(newName)) {
+      return newName;
+    }
+    i++;
+  }
+};
+// --- (End Name Fix) ---
+
 
 interface UserAwarenessState {
   user: {
@@ -142,17 +161,17 @@ export default function RoomPage() {
 
   const [execOutput, setExecOutput] = useState<ExecutionOutput | null>(null);
   const [isLoadingCode, setIsLoadingCode] = useState(false);
-  
-  // --- (Phase 6) Loading state for editor binding ---
   const [isBinding, setIsBinding] = useState(true);
 
   const bindingRef = useRef<MonacoBinding | null>(null);
+  
+  // --- (Name Fix) Ref to store local user name to prevent re-renders
+  const localUserNameRef = useRef(randomName());
 
   // --- HOOK 1 (Yjs Setup) ---
   useEffect(() => {
     if (!roomId) return;
-    setIsBinding(true); // Start loading
-    
+    setIsBinding(true); 
     const ydoc = new Y.Doc();
     const yTextInstance = ydoc.getText('monaco');
     setYText(yTextInstance);
@@ -167,25 +186,60 @@ export default function RoomPage() {
     wsProvider.on('status', (event: { status: string }) => {
       console.log(`[Yjs] ${event.status}`);
       if (event.status === 'connected') {
-        // --- (Phase 6) Turn off loading state once connected ---
-        // We add a small delay to allow the Yjs doc to sync
         setTimeout(() => {
           setIsBinding(false);
         }, 500);
       } else if (event.status === 'disconnected') {
-        setIsBinding(true); // Show loading if disconnected
+        setIsBinding(true);
       }
     });
 
-    // ... (rest of awareness setup is the same) ...
+    // --- (Name Fix) Use the ref for the initial name
     const localUser = {
-      name: randomName(),
+      name: localUserNameRef.current,
       color: randomColor()
     };
     wsProvider.awareness.setLocalStateField('user', localUser);
+
     const awarenessChangeHandler = () => {
       const states = wsProvider.awareness.getStates() as Map<number, UserAwarenessState>;
+      const localClientId = wsProvider.awareness.clientID;
+      const localState = states.get(localClientId);
+
+      if (!localState || !localState.user) return; // Not ready yet
+
+      const usedNames = new Set<string>();
+      let collision = false;
+
+      // --- (Name Fix) Check for name collisions ---
+      states.forEach((state, clientId) => {
+        if (clientId === localClientId || !state.user) {
+          return; // Skip self or empty states
+        }
+        
+        usedNames.add(state.user.name); // Add to list of names used by *others*
+
+        // If another user has my name, AND their ID is smaller (they were "first")
+        if (state.user.name === localState.user.name && clientId < localClientId) {
+          collision = true;
+        }
+      });
+
+      // If collision detected, pick a new name
+      if (collision) {
+        const newName = getAvailableName(usedNames);
+        localUserNameRef.current = newName; // Update our ref
+        const newLocalUser = { ...localState.user, name: newName };
+        wsProvider.awareness.setLocalStateField('user', newLocalUser);
+        console.warn(`[Awareness] Name collision detected. Renaming to ${newName}`);
+        // Handler will run again after state update, so we can exit
+        return;
+      }
+      // --- (End Name Fix) ---
+
+      // No collision, proceed with UI updates
       setActiveUsers(new Map(states));
+      
       states.forEach((state, clientId) => {
         if (state.user && state.user.color) {
           const styleId = `yjs-client-${clientId}`;
@@ -282,22 +336,36 @@ export default function RoomPage() {
         toast.error('Failed to copy URL.');
       });
   };
+  
+  // --- LAYOUT FIX CONSTANTS ---
+  const HEADER_HEIGHT_PX = 80;
+  const OUTPUT_HEIGHT_PX = 250;
+  const PAGE_PADDING_PX = 16; // p-4 (1rem)
 
   return (
-    <div className="bg-gray-800 text-white h-screen p-4 flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center flex-shrink-0">
+    <div 
+      className="bg-gray-800 text-white p-4"
+      style={{ 
+        height: '100vh', 
+        boxSizing: 'border-box'
+      }}
+    >
+      {/* Header (Fixed Height) */}
+      <div 
+        className="flex flex-wrap justify-between items-center flex-shrink-0 gap-2"
+        style={{ 
+          minHeight: `${HEADER_HEIGHT_PX}px`
+        }}
+      >
         <h1 className="text-2xl font-mono">Room: {roomId}</h1>
         <div className="flex items-center space-x-4">
           <ActiveUsers users={activeUsers} />
           <LanguageSelector onSelect={setLanguage} />
           
-          {/* --- (Phase 6) Connection Status --- */}
           <span className={`text-sm font-semibold ${provider?.wsconnected ? 'text-green-400' : 'text-red-400'}`}>
             {provider?.wsconnected ? '● CONNECTED' : (isBinding ? '● CONNECTING...' : '● DISCONNECTED')}
           </span>
 
-          {/* --- (Phase 6) Share Button --- */}
           <button
             onClick={handleShare}
             className="flex items-center px-3 py-1.5 bg-gray-600 hover:bg-gray-700 rounded-md font-semibold transition-colors"
@@ -317,11 +385,13 @@ export default function RoomPage() {
         </div>
       </div>
       
-      {/* Editor */}
+      {/* Editor (Calculated Height) */}
       <div 
-        className="rounded-md overflow-hidden flex-1 min-h-0 my-4 relative"
+        className="rounded-md overflow-hidden relative my-4"
+        style={{ 
+          height: `calc(100vh - ${HEADER_HEIGHT_PX}px - ${OUTPUT_HEIGHT_PX}px - ${PAGE_PADDING_PX * 2}px - 32px)` 
+        }}
       >
-        {/* --- (Phase 6) Loading Overlay --- */}
         {isBinding && (
           <div className="absolute inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-10">
             <span className="text-lg font-semibold animate-pulse">
@@ -341,15 +411,15 @@ export default function RoomPage() {
             minimap: { enabled: true },
             glyphMargin: true,
             "semanticHighlighting.enabled": true,
-            readOnly: isBinding // (Phase 6) Make editor read-only while connecting
+            readOnly: isBinding
           }}
         />
       </div>
       
-      {/* Output Panel --- (Layout Fix) --- */}
+      {/* Output Panel (Fixed Height) */}
       <div 
         className="flex-shrink-0"
-        style={{ height: '250px' }} // Absolute pixel height
+        style={{ height: `${OUTPUT_HEIGHT_PX}px` }}
       >
         <OutputPanel output={execOutput} isLoading={isLoadingCode} />
       </div>
