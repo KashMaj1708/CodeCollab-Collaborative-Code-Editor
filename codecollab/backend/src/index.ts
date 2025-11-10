@@ -83,21 +83,28 @@ server.on('upgrade', (request: any, socket: any, head: any) => {
 // --- NEW SERVER START FUNCTION ---
 const startServer = () => {
   try {
-    // 1. Initialize Redis *first*.
-    // This will connect or throw an error if REDIS_URL is missing.
-    const redisClient = initRedis();
+    const redisClient = initRedis(); // Keep this for your own use
+    
+    // Parse Redis URL for RedisPersistence config
+    const redisUrl = new URL(process.env.REDIS_URL!);
+    
+    redisPersistence = new RedisPersistence({
+      redis: {
+        host: redisUrl.hostname,
+        port: parseInt(redisUrl.port || '6379'),
+        password: redisUrl.password,
+        username: redisUrl.username || 'default',
+        tls: redisUrl.protocol === 'rediss:' ? {} : undefined,
+      }
+    } as any);
 
-    // 2. Create the persistence provider *after* the client is ready.
-    redisPersistence = new RedisPersistence(redisClient as any);
-
-    // 3. Start the server.
     server.listen(port, () => {
       console.log(`🚀 Server (HTTP + WebSocket) listening at http://localhost:${port}`);
     });
 
   } catch (error: any) {
     console.error('Failed to start server:', error.message);
-    process.exit(1); // Exit if Redis URL is missing
+    process.exit(1);
   }
 };
 
