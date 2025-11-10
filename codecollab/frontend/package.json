@@ -18,7 +18,7 @@
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.9.5",
     "y-monaco": "^0.1.6",
-    "y-websocket": "^3.0.0",
+    "y-websocket": "^1.5.0",
     "yjs": "^13.6.27",
     "zustand": "^5.0.8"
   },
