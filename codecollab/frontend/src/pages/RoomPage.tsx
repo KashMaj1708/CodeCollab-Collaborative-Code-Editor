@@ -6,8 +6,6 @@ import { MonacoBinding } from 'y-monaco';
 import Editor from '@monaco-editor/react';
 import type { editor as MonacoEditorTypes } from 'monaco-editor';
 import apiClient from '../apiClient';
-import { toast } from 'react-hot-toast';
-import { Share2 } from 'lucide-react';
 
 // --- (Phase 4) User Presence Code... ---
 const USER_NAMES = [
@@ -323,20 +321,6 @@ export default function RoomPage() {
     }
   };
 
-  // --- (Phase 6) Share/Copy Handler ---
-  const handleShare = () => {
-    if (!roomId) return;
-    const url = window.location.href;
-    navigator.clipboard.writeText(url)
-      .then(() => {
-        toast.success('Room URL copied to clipboard!');
-      })
-      .catch((err) => {
-        console.error('Failed to copy text: ', err);
-        toast.error('Failed to copy URL.');
-      });
-  };
-  
   // --- LAYOUT FIX CONSTANTS ---
   const HEADER_HEIGHT_PX = 80;
   const OUTPUT_HEIGHT_PX = 250;
@@ -366,14 +350,14 @@ export default function RoomPage() {
             {provider?.wsconnected ? '● CONNECTED' : (isBinding ? '● CONNECTING...' : '● DISCONNECTED')}
           </span>
 
-          <button
+          {/* <button
             onClick={handleShare}
             className="flex items-center px-3 py-1.5 bg-gray-600 hover:bg-gray-700 rounded-md font-semibold transition-colors"
             title="Share Room"
           >
             <Share2 size={16} className="mr-2" />
             Share
-          </button>
+          </button> */}
           
           <button
             onClick={handleRunCode}
